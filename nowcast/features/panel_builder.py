@@ -1,3 +1,5 @@
+# nowcast/features/panel_builder.py
+
 import pandas as pd
 from nowcast.data.base import DataProvider
 
@@ -11,10 +13,11 @@ class PanelBuilder:
         包含:
         1. 极值截断 (Clipping): ±4 sigma
         2. 频率对齐 (Weekly->Mean, Monthly->Last)
+        3. [新增] 特征平滑: 3个月移动平均 (3M MA)
         """
         data_dict = {}
         
-        print(f"Building panel with {len(series_list)} indicators (with 4-sigma clipping)...")
+        print(f"Building panel with {len(series_list)} indicators (4-sigma clip + 3M MA)...")
         
         for name in series_list:
             try:
@@ -23,15 +26,16 @@ class PanelBuilder:
                 print(f"⚠️ Warning: Failed to load '{name}'. Error: {e}")
                 continue
             
-            # --- Clipping (Winsorization) ---
+            # --- 1. Clipping (Winsorization) ---
             if len(s) > 10:
                 mean = s.mean()
                 std = s.std()
+                # 限制在均值 ± 4倍标准差内，处理 2020 年极端值
                 upper = mean + 4 * std
                 lower = mean - 4 * std
                 s = s.clip(lower=lower, upper=upper)
             
-            # --- Resampling ---
+            # --- 2. Resampling (统一转为月频) ---
             is_high_freq = False
             inferred_freq = pd.infer_freq(s.index)
             
@@ -43,6 +47,11 @@ class PanelBuilder:
                 s_monthly = s.resample('ME').mean()
             else:
                 s_monthly = s.resample('ME').last()
+            
+            # --- 3. [新增] Smoothing (3个月移动平均) ---
+            # 逻辑：GDP 是季度累计变量，用季度均值去预测更稳健
+            # min_periods=1 保证开头数据不丢失
+            s_monthly = s_monthly.rolling(window=3, min_periods=1).mean()
             
             data_dict[name] = s_monthly
 
