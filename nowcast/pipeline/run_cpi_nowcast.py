@@ -9,18 +9,16 @@ from nowcast.data.fred import FredDataProvider
 from nowcast.features.targets import get_target_series
 from nowcast.features.panel_builder import PanelBuilder
 from nowcast.features.asof_dataset import AsOfDatasetGenerator
-# [修改] 引入朴素 OLS 模型
 from nowcast.models.ols import GDPNowcasterOLS
 
-# --- 核心配置：专家系统特征映射 ---
-# 既然用了 OLS，特征选择必须极其克制，防止过拟合
+# --- 特征映射 ---
 FEATURE_MAPPING = {
     'cpi_energy': ['oil_wti', 'gas_price'],
-    'cpi_shelter': ['cpi_shelter_lag'], # 纯惯性
-    'cpi_food': ['cpi_food_lag', 'ppi_all'], # 惯性 + 成本
+    'cpi_shelter': ['cpi_shelter_lag'],
+    'cpi_food': ['cpi_food_lag', 'ppi_all'],
     'cpi_core': ['cpi_core_lag', 'hourly_earnings', 'consumer_sentiment'],
-    'cpi_sticky': ['cpi_sticky_lag'], # Sticky 极其顽固，只看自己即可
-    'cpi_headline': ['cpi_headline_lag', 'oil_wti', 'gas_price'] # AR + 能源冲击
+    'cpi_sticky': ['cpi_sticky_lag'],
+    'cpi_headline': ['cpi_headline_lag', 'oil_wti', 'gas_price']
 }
 
 ALL_REQUIRED_FEATURES = sorted(list(set(
@@ -28,34 +26,37 @@ ALL_REQUIRED_FEATURES = sorted(list(set(
 )))
 
 def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
-    print("🚀 Initializing CPI Nowcast Pipeline (Simple OLS)...")
+    print("🚀 Initializing CPI Nowcast Pipeline (Robust Alignment)...")
     
     provider = FredDataProvider(api_key="offline_mode") 
     
-    # 1. 准备目标数据
+    # 1. 准备 Target
     y_dict = {}
     print("🎯 Fetching CPI Targets...")
     targets_to_fetch = list(FEATURE_MAPPING.keys())
-    
     for target_name in targets_to_fetch:
         try:
-            if target_name not in provider.series_config:
-                print(f"⚠️ Skipping {target_name}: Not in series.yaml")
-                continue
+            if target_name not in provider.series_config: continue
             s = get_target_series(provider, target_name=target_name, freq="M")
             y_dict[target_name] = s.dropna()
         except Exception as e:
             print(f"⚠️ Warning: {target_name}: {e}")
 
-    if not y_dict: return
+    if not y_dict:
+        print("❌ No valid targets found.")
+        return
 
+    # 以 headline 为主轴
     y_main = y_dict.get('cpi_headline', list(y_dict.values())[0])
 
     # 2. 构建特征面板
     base_features = [f for f in ALL_REQUIRED_FEATURES if not f.endswith('_lag')]
+    # 强制加入 payrolls 防止空面板
+    if 'payrolls' not in base_features: base_features.append('payrolls')
+    
     panel_full = PanelBuilder(provider).build_monthly_panel(base_features)
     
-    # 增加滞后项 (AR) - 带对齐修复
+    # 构建滞后项
     print("✨ Engineering AR features...")
     lag_features = [f for f in ALL_REQUIRED_FEATURES if f.endswith('_lag')]
     for lag_feat in lag_features:
@@ -63,21 +64,22 @@ def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
         if original_name in provider.series_config:
             s_raw = provider.get_series(original_name)
             s_raw.index = pd.to_datetime(s_raw.index)
-            # 对齐到月末
+            
             s_aligned = s_raw.copy()
             s_aligned.index = s_aligned.index + pd.tseries.offsets.MonthEnd(0)
+            
+            # Shift 1 month
+            s_aligned = s_aligned.shift(1)
+            
             s_aligned = s_aligned.reindex(panel_full.index)
             panel_full[lag_feat] = s_aligned
 
-    # 3. 初始化生成器
+    # 3. 初始化 Generator
     gen = AsOfDatasetGenerator(panel_full, y_main, target_freq="M")
     
     if end_date is None: end_date = pd.Timestamp.now()
-    if start_date == "auto":
-        # 此时可以用更早的数据，因为 OLS 不需要太多样本预热
-        start_date = pd.Timestamp("1990-01-01")
-    else:
-        start_date = pd.Timestamp(start_date)
+    if start_date == "auto": start_date = pd.Timestamp("1990-01-01")
+    else: start_date = pd.Timestamp(start_date)
 
     eval_dates = pd.date_range(start=start_date, end=end_date, freq=freq)
     if eval_dates[-1].date() < pd.Timestamp.now().date():
@@ -88,14 +90,19 @@ def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
     # --- 预计算 ---
     print("⚡ Pre-computing feature vectors...")
     historical_X_map = {}
-    for t_date in y_main.index:
+    
+    # [关键修复 1] 这里只计算 panel_full 中存在的日期
+    # 这样就能知道我们到底有哪些历史特征可用
+    available_dates = panel_full.dropna(how='all').index
+    # 取 y_main 和 available_dates 的交集作为有效历史
+    valid_history_dates = y_main.index.intersection(available_dates)
+
+    for t_date in valid_history_dates:
         months = gen.get_period_months(t_date)
         X_vec, _ = gen.create_feature_vector(months, panel_full)
         historical_X_map[t_date] = X_vec
         
     results = []
-    
-    # 缓存列索引
     feat_cols = panel_full.columns.tolist()
     feat_indices_map = {col: i for i, col in enumerate(feat_cols)}
 
@@ -103,10 +110,10 @@ def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
     for as_of_date in tqdm(eval_dates):
         training_cutoff = as_of_date - pd.Timedelta(days=30)
         
+        # 1. 生成测试样本
         current_samples = gen.generate_dataset([as_of_date])
         test_sample = current_samples[0]
-        # 注意：OLS predict 需要 2D array
-        X_test_full = test_sample.X
+        X_test_df = pd.DataFrame([test_sample.X], columns=panel_full.columns)
         
         row = {
             "date": as_of_date,
@@ -114,11 +121,20 @@ def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
             "data_completeness": test_sample.completeness
         }
 
+        # 2. [关键修复 2] 确定可用训练集
+        # 必须同时满足：(1) 在截止日期之前 (2) 在 historical_X_map 预计算缓存里
         valid_periods = y_main.index[y_main.index <= training_cutoff]
-        if len(valid_periods) < 24: continue
+        # 取交集：确保我们既有 Y，又有预计算好的 X
+        valid_periods = valid_periods.intersection(valid_history_dates)
         
+        if len(valid_periods) < 24: 
+            # 样本太少，跳过
+            continue
+        
+        # 从缓存提取 X_train
         X_train_full = np.array([historical_X_map[d] for d in valid_periods])
 
+        # 3. 针对每个目标训练
         for target_name, y_series in y_dict.items():
             required_feats = FEATURE_MAPPING.get(target_name, [])
             if not required_feats: continue
@@ -126,26 +142,28 @@ def run_cpi_backtest(start_date="auto", end_date=None, freq="W-FRI"):
             feature_indices = [feat_indices_map[f] for f in required_feats if f in feat_indices_map]
             if not feature_indices: continue
             
+            # 再做一次交集：确保该 target 也有历史数据
             common_idx = valid_periods.intersection(y_series.index)
             if len(common_idx) < 24:
                 row[target_name] = np.nan
                 continue
             
+            # 找到 common_idx 在 valid_periods 中的位置索引
             time_indices = valid_periods.get_indexer(common_idx)
             
-            # 特征切片
+            # 切片
             X_train_sub = X_train_full[time_indices][:, feature_indices]
             y_train_sub = y_series.loc[common_idx].values
+            X_test_sub = X_test_df[required_feats].values
             
-            X_test_sub = X_test_full[feature_indices].reshape(1, -1)
-            
-            # [修改] 使用 OLS 模型
-            # OLS 没有 bias，它会为了拟合数据自动调整系数的大小
+            # OLS
             model = GDPNowcasterOLS()
             model.fit(X_train_sub, y_train_sub)
-            pred = model.predict(X_test_sub)[0]
             
-            row[target_name] = pred
+            if np.isnan(X_test_sub).any():
+                X_test_sub = np.nan_to_num(X_test_sub)
+                
+            row[target_name] = model.predict(X_test_sub)[0]
             
         results.append(row)
 

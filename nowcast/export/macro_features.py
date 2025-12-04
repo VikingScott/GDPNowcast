@@ -8,9 +8,6 @@ from nowcast.features.to_daily import to_daily_features
 
 def build_macro_features(start_date: str = "1990-01-01", 
                          end_date: str = None) -> pd.DataFrame:
-    """
-    [主入口] 并行生成 GDP 和 CPI 的 Nowcast，并合并为单一宽表。
-    """
     print(f"\n========== 1. Running GDP Nowcast (from {start_date}) ==========")
     gdp_res = run_gdp(start_date=start_date, end_date=end_date, freq="M")
     
@@ -23,49 +20,46 @@ def build_macro_features(start_date: str = "1990-01-01",
     gdp_daily = to_daily_features(gdp_res, prefix="gdp")
     
     # CPI 处理
-    # 1. 扩展到日频
-    cpi_daily = cpi_res.resample('D').ffill()
+    # [关键修复] 显式选择要 Resample 的数值列
+    # 排除 target_period 等字符串
+    cols_to_resample = [c for c in cpi_res.columns 
+                        if c != 'target_period' 
+                        and c != 'date']
     
-    # 2. 识别需要计算 Z-Score 的列 (排除元数据和字符串)
-    # 找出所有 "cpi_xxx" 且不是 std, completeness, z 的列
+    # 使用 .last() 聚合，如果有非数值列混入会自动被忽略或报错，所以先切片
+    cpi_numeric = cpi_res[cols_to_resample].apply(pd.to_numeric, errors='coerce')
+    
+    # 聚合到日频
+    cpi_daily = cpi_numeric.resample('D').last().ffill()
+    
+    # 计算 Z-Score
     cpi_targets = [c for c in cpi_daily.columns 
                    if 'cpi_' in c 
-                   and '_std' not in c 
-                   and '_z' not in c 
-                   and 'completeness' not in c
-                   and c != 'target_period']
+                   and 'completeness' not in c]
     
-    # 3. 平滑与 Z-Score
     for col in cpi_targets:
-        # [Fix] 强制转为 float，防止 Object 类型报错
-        series = cpi_daily[col].astype(float)
-        
+        series = cpi_daily[col]
         # 平滑
         cpi_daily[col] = series.rolling(window=5, min_periods=1).mean()
-        
         # Z-Score
         rmean = series.rolling(window=252, min_periods=60).mean()
         rstd = series.rolling(window=252, min_periods=60).std()
         cpi_daily[f"{col}_z"] = (series - rmean) / (rstd + 1e-6)
     
-    # 4. 重命名 CPI 元数据，防止与 GDP 冲突
+    # 重命名
     cpi_daily = cpi_daily.rename(columns={
-        'data_completeness': 'cpi_data_completeness',
-        'hard_data_z': 'cpi_hard_data_z',
-        'soft_data_z': 'cpi_soft_data_z'
+        'data_completeness': 'cpi_data_completeness'
     })
     
-    # 5. 合并
+    # 合并
     combined = pd.merge(gdp_daily, cpi_daily, left_index=True, right_index=True, how='outer')
     
-    # 填充与清洗
+    # 填充
     combined = combined.ffill().dropna(subset=['gdp_nowcast', 'cpi_headline'])
     
     print(f"✅ Final Dataset Shape: {combined.shape}")
-    print("Columns:", combined.columns.tolist())
     
     return combined
 
 if __name__ == "__main__":
-    df = build_macro_features()
-    print(df.tail())
+    build_macro_features()

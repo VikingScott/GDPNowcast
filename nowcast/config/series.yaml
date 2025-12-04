@@ -1,9 +1,10 @@
 # config/series.yaml
 
-# ==========================================
-# --- GDP Targets & Hard Data ---
-# ==========================================
+# ==============================================================================
+# PART 1: GDP Nowcast (Growth Signals)
+# ==============================================================================
 
+# --- Targets (季度目标) ---
 gdp_real:
   vendor: fred
   code: GDPC1
@@ -11,6 +12,7 @@ gdp_real:
   transform: pct_qoq_annualized
   name: "Real GDP"
 
+# --- Hard Data (实体经济) ---
 industrial_production:
   vendor: fred
   code: INDPRO
@@ -39,8 +41,7 @@ housing_starts:
   transform: diff
   name: "Housing Starts"
 
-# --- Soft / Survey Data ---
-
+# --- Soft / Survey Data (情绪与预期) ---
 philly_fed_mfg:
   vendor: fred
   code: GACDFSA066MSFRBPHI
@@ -55,8 +56,7 @@ consumer_sentiment:
   transform: diff
   name: "U. Mich. Consumer Sentiment"
 
-# --- High Frequency Data ---
-
+# --- High Frequency (周频) ---
 initial_claims:
   vendor: fred
   code: ICSA
@@ -64,11 +64,13 @@ initial_claims:
   transform: log_diff
   name: "Initial Claims"
 
-# ==========================================
-# --- CPI & Inflation Targets ---
-# ==========================================
 
-# 1. Target: CPI Headline
+# ==============================================================================
+# PART 2: CPI Nowcast (Inflation Signals)
+# ==============================================================================
+
+# --- 1. Headline Target (资产锚定) ---
+# All Weather 交易的核心标的 (TIPS 挂钩)
 cpi_headline:
   vendor: fred
   code: CPIAUCSL
@@ -76,18 +78,8 @@ cpi_headline:
   transform: pct_mom
   name: "CPI Headline (Seasonally Adjusted)"
 
-# 2. Energy: WTI Crude Oil (High Freq)
-oil_wti:
-  vendor: fred
-  code: DCOILWTICO
-  freq: daily
-  transform: pct_mom
-  name: "WTI Crude Oil Price (Daily Spot)"
-
-# 2.1 
-# Energy: CPI Energy (CPIENGSL)
-# • 指标是啥：CPI 能源分项（含汽油、电力、燃气）。
-# • 逻辑：这是 Headline CPI 波动的主要来源。我们用高频的 oil_wti 和 gas_price 来预测它。
+# --- 2. Energy Component (波动源 / 伪装者) ---
+# 目标: CPI Energy 分项 (用于归因)
 cpi_energy:
   vendor: fred
   code: CPIENGSL
@@ -95,7 +87,15 @@ cpi_energy:
   transform: pct_mom
   name: "CPI Energy (Seasonally Adjusted)"
 
-# 3. Energy: Gasoline (High Freq)
+# 特征: 实时油价 (Lag=0)
+oil_wti:
+  vendor: fred
+  code: DCOILWTICO
+  freq: daily
+  transform: pct_mom
+  name: "WTI Crude Oil Price (Daily Spot)"
+
+# 特征: 实时汽油 (Lag=0)
 gas_price:
   vendor: fred
   code: GASREGW
@@ -103,35 +103,8 @@ gas_price:
   transform: pct_mom
   name: "US Regular Gasoline Prices"
 
-# 4. Expectations: Breakeven Inflation
-inflation_breakeven:
-  vendor: fred
-  code: T10YIE
-  freq: daily
-  transform: diff
-  name: "10-Year Breakeven Inflation Rate"
-
-# 5. Upstream: PPI
-ppi_all:
-  vendor: fred
-  code: PPIACO
-  freq: monthly
-  transform: pct_mom
-  name: "PPI All Commodities"
-
-# 6. Inertia: Sticky Price CPI
-cpi_sticky:
-  vendor: fred
-  code: STICKCPIM157SFRBATL
-  freq: monthly
-  transform: none
-  name: "Sticky Price CPI"
-
-# ==========================================
-# --- CPI Breakdown Targets (通胀拆解) ---
-# ==========================================
-
-# 7. Food: CPI Food
+# --- 3. Food Component (供给冲击) ---
+# 目标: CPI Food 分项
 cpi_food:
   vendor: fred
   code: CPIUFDSL
@@ -139,7 +112,16 @@ cpi_food:
   transform: pct_mom
   name: "CPI Food (Seasonally Adjusted)"
 
-# 8. Confirmation: Core CPI
+# 特征: 上游成本 (PPI)
+ppi_all:
+  vendor: fred
+  code: PPIACO
+  freq: monthly
+  transform: pct_mom
+  name: "PPI All Commodities"
+
+# --- 4. Core / Sticky (内生趋势 / 确认信号) ---
+# 目标: 核心 CPI (剔除食品能源)
 cpi_core:
   vendor: fred
   code: CPILFESL
@@ -147,7 +129,25 @@ cpi_core:
   transform: pct_mom
   name: "Core CPI (Less Food & Energy)"
 
-# 9. Structure: CPI Shelter
+# 目标: 粘性 CPI (判断通胀是否顽固)
+# 注意: 源数据已经是年化百分比，transform: none
+cpi_sticky:
+  vendor: fred
+  code: STICKCPIM157SFRBATL
+  freq: monthly
+  transform: none
+  name: "Sticky Price CPI"
+
+# 特征: 时薪 (服务业通胀核心驱动)
+hourly_earnings:
+  vendor: fred
+  code: CES0500000003
+  freq: monthly
+  transform: pct_mom
+  name: "Avg Hourly Earnings (Prod/Nonsup)"
+
+# --- 5. Shelter (压舱石 / 趋势确认) ---
+# 目标: CPI Shelter (房租等)
 cpi_shelter:
   vendor: fred
   code: CUSR0000SAH1
@@ -155,16 +155,11 @@ cpi_shelter:
   transform: pct_mom
   name: "CPI Shelter"
 
-# ==========================================
-# --- Supplementary Predictor (补充特征) ---
-# ==========================================
-
-# 10. Labor Cost: Average Hourly Earnings
-# • 指标是啥：私人非农企业生产和非管理人员的平均时薪。
-# • 作用：服务业通胀的核心驱动力，预测 Core 和 Sticky CPI 的关键。
-hourly_earnings:
+# --- 6. Market Expectations (市场情绪) ---
+# 特征: 盈亏平衡通胀率 (TIPS隐含)
+inflation_breakeven:
   vendor: fred
-  code: CES0500000003
-  freq: monthly
-  transform: pct_mom
-  name: "Avg Hourly Earnings (Prod/Nonsup)"
+  code: T10YIE
+  freq: daily
+  transform: diff
+  name: "10-Year Breakeven Inflation Rate"
