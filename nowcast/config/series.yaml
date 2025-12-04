@@ -84,6 +84,17 @@ oil_wti:
   transform: pct_mom
   name: "WTI Crude Oil Price (Daily Spot)"
 
+# 2.1 
+# Energy: CPI Energy (CPIENGSL)
+# • 指标是啥：CPI 能源分项（含汽油、电力、燃气）。
+# • 逻辑：这是 Headline CPI 波动的主要来源。我们用高频的 oil_wti 和 gas_price 来预测它。
+cpi_energy:
+  vendor: fred
+  code: CPIENGSL
+  freq: monthly
+  transform: pct_mom
+  name: "CPI Energy (Seasonally Adjusted)"
+
 # 3. Energy: Gasoline (High Freq)
 gas_price:
   vendor: fred
