@@ -1,60 +1,75 @@
-# SVR implementation
 # nowcast/models/svr.py
 
+# Currently not functional due to para setting issues and multi-threading bugs.
+
 import numpy as np
-import pandas as pd
 from sklearn.svm import SVR
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler  # <--- 新增 RobustScaler
 from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+from scipy.stats import loguniform, uniform
 from .base import NowcastModel
 
 class GDPNowcasterSVR(NowcastModel):
     def __init__(self, 
                  kernel='rbf', 
-                 C=10.0, 
-                 epsilon=0.005, 
-                 gamma='scale'):
-        """
-        SVR 模型包装器。
-        内部使用 StandardScaler + SVR 的 Pipeline，
-        因为 SVR 对特征的尺度非常敏感。
-        """
+                 C=1.0, 
+                 epsilon=0.1, 
+                 gamma='scale',
+                 auto_tune=False):
         self.target_name = "gdp_real"
-        # 自动做标准化 (StandardScaler) 是 SVR 的必选项
+        self.auto_tune = auto_tune
+        self.kernel = kernel
+        self.C = C
+        self.epsilon = epsilon
+        self.gamma = gamma
+        
+        self._build_model()
+
+    def _build_model(self):
+        # [关键修改] 使用 RobustScaler 替代 StandardScaler
+        # RobustScaler 利用中位数和四分位距 (IQR) 进行缩放，
+        # 对 2020 年这种极端异常值不敏感，能防止模型被"带偏"。
         self.model = make_pipeline(
-            StandardScaler(),
-            SVR(kernel=kernel, C=C, epsilon=epsilon, gamma=gamma)
+            RobustScaler(), 
+            SVR(kernel=self.kernel, C=self.C, epsilon=self.epsilon, gamma=self.gamma)
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """
-        训练模型。
-        X: (n_samples, n_features)
-        y: (n_samples,)
-        """
-        self.model.fit(X, y)
+        if self.auto_tune and len(y) > 20:
+            self.tune_and_fit(X, y)
+        else:
+            self.model.fit(X, y)
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def tune_and_fit(self, X, y):
         """
-        预测。
+        使用 RandomizedSearchCV 寻找最佳参数。
         """
-        return self.model.predict(X)
+        param_dist = {
+            'svr__kernel': ['linear', 'rbf'],     # 让数据决定是用线性还是非线性
+            'svr__C': loguniform(1e-1, 1e3),      # C 的搜索范围
+            'svr__epsilon': uniform(0.01, 0.5),   # 容错范围
+            'svr__gamma': ['scale', 'auto']
+        }
+        
+        tscv = TimeSeriesSplit(n_splits=3)
+        
+        search = RandomizedSearchCV(
+            self.model, 
+            param_distributions=param_dist,
+            n_iter=10, 
+            cv=tscv, 
+            scoring='neg_mean_squared_error',
+            n_jobs=1,
+            random_state=42
+        )
+        search.fit(X, y)
+        
+        # 调试时可以取消注释查看选了什么参数
+        print(f"🔍 Best Params: {search.best_params_}") 
+        
+        self.model = search.best_estimator_
 
-# ==========================================
-# 快速自测
-# ==========================================
-if __name__ == "__main__":
-    # python -m nowcast.models.svr
-    
-    # 造一点假数据测试流程
-    print("Testing SVR Model wrapper...")
-    X_dummy = np.random.randn(50, 21) # 50个样本，21个特征
-    y_dummy = np.random.randn(50) * 0.02 + 0.02 # 模拟 2% 左右的增长
-    
-    model = GDPNowcasterSVR(C=10.0)
-    model.fit(X_dummy, y_dummy)
-    
-    pred = model.predict(X_dummy[:5])
-    print(f"Predictions: {pred}")
-    print("✅ SVR Model test passed!")
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return self.model.predict(X)
