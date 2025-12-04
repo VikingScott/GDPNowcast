@@ -70,22 +70,22 @@ retail_sales_real:
   transform: pct_mom
   name: "Real Retail Sales"
 
-# ISM Manufacturing PMI（NAPM）
-# • 指标是啥：ISM 制造业采购经理指数（PMI），50 为荣枯线，反映制造业活动的“景气度”，典型软数据、先行指标。FRED 的 NAPM 为该指数的月度时间序列。 [oai_citation:13‡ismworld.org](https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/?utm_source=chatgpt.com)
-# • 何时发布：由 ISM 在每月“第一个工作日”10:00 ET 发布制造业PMI。 [oai_citation:14‡ismworld.org](https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/?utm_source=chatgpt.com)
-# • 原始来源：Institute for Supply Management® 的《Manufacturing ISM® Report On Business®》，FRED 镜像为 NAPM。 [oai_citation:15‡ismworld.org](https://www.ismworld.org/supply-management-news-and-reports/reports/ism-pmi-reports/?utm_source=chatgpt.com)
+# 费城联储制造业指数 (Philly Fed Manufacturing Index)
+# • 指标是啥：费城联储制造业商业前景调查（MBOS）中的“当前一般活动”指数。0 为荣枯线（>0 扩张，<0 收缩）。它是 ISM PMI 的最佳平替，也是华尔街最看重的先行指标之一。
+# • 何时发布：通常在每月“第三个星期四” 8:30 ET 发布，比 ISM PMI 早约半个月，是当月最早发布的制造业软数据。
+# • 原始来源：Federal Reserve Bank of Philadelphia，FRED 代码为 GACDFSA066MSFRBPHI（季调后）。
 # • transform 理由：diff
-#   - PMI 本身就是标准化指数（大致 0–100），经济含义更偏“扩张 vs 收缩速度”；
-#   - 使用“点数变化”比百分比变化更符合实务解读（例如 PMI 从 48 → 52 的“+4点”）。
+#   - 该指数本身是扩散指数（范围 -100 到 +100），反映的是“相比上月好转还是恶化”的净比例；
+#   - 使用 diff（点数变化）可以捕捉“改善/恶化的加速度”（例如从 -20 跳升至 -5，虽然仍收缩但动能大增）。
 # • 注意事项：
-#   - 软数据波动大，单月噪音较强，模型可考虑平滑（MA）或与硬数据组合使用；
-#   - FRED 序列通常为未季调/或已按官方季调给出，需与官方定义保持一致。
-ism_pmi:
+#   - 波动性通常比 ISM 略大，但方向高度一致；
+#   - 它是完全免费的官方数据，无版权风险。
+philly_fed_mfg:
   vendor: fred
-  code: NAPM
+  code: GACDFSA066MSFRBPHI
   freq: monthly
   transform: diff
-  name: "ISM Manufacturing PMI"
+  name: "Philly Fed Manufacturing Index"
 
 # Housing Starts（HOUST）
 # • 指标是啥：新开工住房单位总数（月度、季调年化），是房地产投资与建筑活动的领先指标。 [oai_citation:16‡FRED](https://fred.stlouisfed.org/series/HOUST?utm_source=chatgpt.com)

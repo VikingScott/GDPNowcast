@@ -32,7 +32,7 @@ def get_target_series(provider: DataProvider,
         # 将季度初 (FRED默认) 调整为季度末
         # offsets.QuarterEnd(0) 会把 1/1 移到 3/31, 4/1 移到 6/30
         series.index = series.index + pd.tseries.offsets.QuarterEnd(startingMonth=3)
-    
+    series = series * 100
     series.name = "target"
     return series
 
