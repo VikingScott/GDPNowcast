@@ -1,0 +1,34 @@
+# --- Python 通用 ---
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+
+# --- 数据文件 (隐私与体积控制) ---
+# 忽略所有 csv, xlsx, parquet
+*.csv
+*.xlsx
+*.parquet
+*.pkl
+
+# 但保留 .gitkeep (如果有的话，用于保持文件夹结构)
+!**/.gitkeep
+
+# 也可以明确指定忽略 data/cache 下的所有内容
+nowcast/data/cache/*
+# 如果你有 archive 文件夹，也忽略
+nowcast/data/archive/*
+
+# --- 敏感配置 ---
+# 只有模板可以上传，真实 key 绝对不能传
+.env
+
+# --- 文件夹屏蔽 ---
+# 根据你的要求，忽略 notebooks 和 tests
+notebooks/
+tests/
+
+# 如果你不想忽略 scripts 文件夹本身，只想忽略里面的临时输出，可以把上面那行删掉
+# 或者是 specific 的：
+# notebooks/*.ipynb
+# notebooks/.ipynb_checkpoints/
