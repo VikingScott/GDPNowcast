@@ -1,12 +1,11 @@
-# Abstract DataProvider class
-# nowcast/data/base.py
-
 from abc import ABC, abstractmethod
 import pandas as pd
 
 class DataProvider(ABC):
     @abstractmethod
-    def get_series(self, internal_name: str, end_date: pd.Timestamp | None = None) -> pd.Series:
+    # 新增 skip_transform 参数，默认为 False 以保持兼容性
+    def get_series(self, internal_name: str, end_date: pd.Timestamp | None = None, skip_transform: bool = False) -> pd.Series:
+        pass
         """
         根据 internal_name (如 'gdp_real') 获取时间序列数据。
         

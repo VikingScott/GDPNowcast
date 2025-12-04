@@ -5,7 +5,7 @@ import pandas as pd
 
 def pct_change(series: pd.Series, periods: int = 1) -> pd.Series:
     """百分比变化 (e.g. 0.01)"""
-    return series.pct_change(periods=periods)
+    return series.pct_change(periods=periods,fill_method=None)
 
 def diff(series: pd.Series, periods: int = 1) -> pd.Series:
     """简单差分 (t - t-1)"""

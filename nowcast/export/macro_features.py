@@ -1,44 +1,42 @@
-# Main entry point
 # nowcast/export/macro_features.py
 
 import pandas as pd
-from nowcast.pipeline.run_gdp_nowcast import run_backtest
+from nowcast.pipeline.run_gdp_nowcast import run_backtest as run_gdp
+from nowcast.pipeline.run_cpi_nowcast import run_cpi_backtest as run_cpi
 from nowcast.features.to_daily import to_daily_features
 
-def build_macro_features(start_date: str = "2015-01-01", 
-                         end_date: str = None,
-                         prices_index: pd.DatetimeIndex = None) -> pd.DataFrame:
+def build_macro_features(start_date: str = "1990-01-01", 
+                         end_date: str = None) -> pd.DataFrame:
     """
-    [对外接口] 构建全套日频宏观特征。
-    
-    流程：
-    1. 运行 Nowcast Pipeline 生成历史预测序列。
-    2. 调用 to_daily_features 转换为日频信号。
-    3. 返回清洗好的 DataFrame。
-    
-    Args:
-        start_date: 开始日期
-        end_date: 结束日期
-        prices_index: (可选) 传入 ETF 价格表的 index，用于对齐交易日
-    
-    Returns:
-        pd.DataFrame: 包含 gdp_nowcast_z, growth_regime 等列
+    [主入口] 并行生成 GDP 和 CPI 的 Nowcast，并合并为单一宽表。
+    默认从 1990-01-01 开始，以保证数据质量。
     """
-    print("🏗️ Building Macro Features...")
+    print(f"\n========== 1. Running GDP Nowcast (from {start_date}) ==========")
+    gdp_res = run_gdp(start_date=start_date, end_date=end_date, freq="M")
     
-    # 1. 获取 Nowcast 原始序列 (Month-End)
-    # 注意：这里我们复用了 pipeline 里的逻辑，它会自动读取本地缓存
-    nowcast_res = run_backtest(start_date=start_date, end_date=end_date, freq="M")
+    print(f"\n========== 2. Running CPI Nowcast (from {start_date}) ==========")
+    cpi_res = run_cpi(start_date=start_date, end_date=end_date, freq="W-FRI")
     
-    # 2. 转换为日频信号
-    daily_features = to_daily_features(nowcast_res, market_calendar=prices_index)
+    print("\n========== 3. Merging & Processing ==========")
     
-    print("✅ Macro Features Ready.")
-    print(daily_features.tail())
+    # 转换为日频信号 (带前缀)
+    # GDP -> gdp_nowcast, gdp_hard_z...
+    gdp_daily = to_daily_features(gdp_res, prefix="gdp")
     
-    return daily_features
+    # CPI -> cpi_nowcast, cpi_hard_z...
+    cpi_daily = to_daily_features(cpi_res, prefix="cpi")
+    
+    # 合并 (Outer Join)
+    combined = pd.merge(gdp_daily, cpi_daily, left_index=True, right_index=True, how='outer')
+    
+    # 填充空隙 (ffill) 并去除极早期的空值
+    combined = combined.ffill().dropna()
+    
+    print(f"✅ Final Dataset Shape: {combined.shape}")
+    print("Columns:", combined.columns.tolist())
+    
+    return combined
 
 if __name__ == "__main__":
-    # 测试一下接口
-    df = build_macro_features(start_date="2018-01-01")
-    print(df.describe())
+    df = build_macro_features()
+    print(df.tail())

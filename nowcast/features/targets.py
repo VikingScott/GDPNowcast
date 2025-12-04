@@ -1,62 +1,45 @@
-# Target construction
 # nowcast/features/targets.py
 
 import pandas as pd
 from nowcast.data.base import DataProvider
-from nowcast.data.fred import FredDataProvider
 
 def get_target_series(provider: DataProvider, 
                       target_name: str = "gdp_real",
-                      align_to_quarter_end: bool = True) -> pd.Series:
+                      freq: str = "Q") -> pd.Series:
     """
     获取并处理目标变量 (Ground Truth)。
+    支持季度 (GDP) 和 月度 (CPI) 两种频率。
     
     Args:
         provider: 数据提供者实例
-        target_name: series.yaml 中定义的目标变量名 (默认 gdp_real)
-        align_to_quarter_end: 是否将索引对齐到季度末 (建议 True)
-                              e.g. 2023-01-01 -> 2023-03-31
-                              这样如果不小心引入了未来数据，更容易察觉。
+        target_name: series.yaml 中定义的目标变量名
+        freq: 目标频率。
+              - 'Q': 季度 (默认, e.g. GDP)，对齐到季度末。
+              - 'M': 月度 (e.g. CPI)，对齐到月末。
     
     Returns:
-        pd.Series: 经过变换的目标序列 (e.g. Real GDP Growth)
+        pd.Series: 经过变换和对齐的目标序列，数值已放大100倍 (e.g. 0.02 -> 2.0)
     """
-    # 1. 从 Provider 获取数据
-    # 注意：Provider 会根据 yaml 配置自动做 pct_qoq_annualized 变换
+    # 1. 从 Provider 获取数据 (已做过 yaml 里的 transform)
     series = provider.get_series(target_name)
     
-    # 2. 索引对齐到季度末
-    if align_to_quarter_end:
-        # 确保索引是 datetime 类型
-        series.index = pd.to_datetime(series.index)
-        # 将季度初 (FRED默认) 调整为季度末
-        # offsets.QuarterEnd(0) 会把 1/1 移到 3/31, 4/1 移到 6/30
+    # 确保索引为 datetime 类型
+    series.index = pd.to_datetime(series.index)
+
+    # 2. 索引对齐 (Alignment)
+    if freq == "Q":
+        # 季度数据：通常 FRED 标记在季初 (1/1)，我们需要对齐到季末 (3/31)
+        # 这样在 as_of_dataset 里逻辑更顺：站在 3/31 预测 3/31 的值
         series.index = series.index + pd.tseries.offsets.QuarterEnd(startingMonth=3)
-    series = series * 100
+    elif freq == "M":
+        # 月度数据：通常 FRED 标记在月初 (1/1)，我们需要对齐到月末 (1/31)
+        series.index = series.index + pd.tseries.offsets.MonthEnd(0)
+    else:
+        raise ValueError(f"Unsupported freq: {freq}. Use 'Q' or 'M'.")
+
+    # 3. 数值放大 (Scaling)
+    # 将小数 (0.02) 转换为百分点 (2.0)，帮助线性模型优化器更快收敛
+    series = series * 100 
+    
     series.name = "target"
     return series
-
-# ==========================================
-# 自测代码 (Scaffolding Test)
-# ==========================================
-if __name__ == "__main__":
-    # 这里的代码只有在直接运行此文件时才会执行
-    # python nowcast/features/targets.py
-    
-    try:
-        print("Testing Target Construction...")
-        provider = FredDataProvider()
-        
-        target = get_target_series(provider)
-        
-        print(f"\nTarget Name: {target.name}")
-        print(f"Frequency  : {pd.infer_freq(target.index)}")
-        print(f"Latest Obs : {target.index[-1].date()} -> {target.iloc[-1]:.2%}")
-        
-        print("\nLast 5 Quarters:")
-        print(target.tail(5))
-        
-        print("\n✅ Target construction successful!")
-        
-    except Exception as e:
-        print(f"\n❌ Error: {e}")

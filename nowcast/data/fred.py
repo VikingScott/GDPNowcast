@@ -5,13 +5,12 @@ import yaml
 import pandas as pd
 from pathlib import Path
 from fredapi import Fred
-from dotenv import load_dotenv  # <--- 新增导入
+from dotenv import load_dotenv
 from .base import DataProvider
 from .transforms import TRANSFORM_MAP
 
-# 自动加载 .env 文件 (如果存在)
-# 它会从当前目录向上寻找 .env，直到找到为止
-load_dotenv()  # <--- 新增这行，魔法发生的地方
+# 自动加载 .env 文件
+load_dotenv()
 
 class FredDataProvider(DataProvider):
     def __init__(self, api_key: str = None, config_path: str = None, cache_dir: str = None):
@@ -21,18 +20,10 @@ class FredDataProvider(DataProvider):
             config_path: series.yaml 路径
             cache_dir: 本地缓存目录 (默认: nowcast/data/cache)
         """
+        # 1. API Key Setup
         self.api_key = api_key or os.getenv("FRED_API_KEY")
         
-        # 为了兼容之前的“离线模式”逻辑：
-        # 如果既没有传参，环境变量里也没有，且不是为了离线测试，才报错。
-        if not self.api_key:
-             # 这里稍微宽容一点，如果没有key，可以先不报错，
-             # 等到真正要联网下载时(get_series里的else分支)再报错。
-             # 但为了严谨，我们通常还是建议在这里检查。
-             # 现在的逻辑是：如果没有 key，self.fred 初始化可能会失败，或者我们需要手动处理。
-             pass 
-
-        # 如果有 key，初始化 fred；如果没有，self.fred 设为 None，只允许读缓存
+        # 宽容处理：如果没有 Key，允许初始化（用于读取本地缓存），但在联网时会报错
         if self.api_key:
             self.fred = Fred(api_key=self.api_key)
         else:
@@ -40,6 +31,7 @@ class FredDataProvider(DataProvider):
         
         # 2. Config Setup
         if config_path is None:
+            # 默认找 ../config/series.yaml
             base_dir = Path(__file__).parent.parent
             config_path = base_dir / "config" / "series.yaml"
             
@@ -54,14 +46,24 @@ class FredDataProvider(DataProvider):
             
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def get_series(self, internal_name: str, end_date: pd.Timestamp | None = None) -> pd.Series:
+    def get_series(self, internal_name: str, end_date: pd.Timestamp | None = None, skip_transform: bool = False) -> pd.Series:
+        """
+        获取时间序列数据。
+        
+        Args:
+            internal_name: series.yaml 中的键名
+            end_date: 截止日期 (Vintage截断)
+            skip_transform: 是否跳过数据变换 (如 pct_change)。
+                            对于高频数据 (Weekly/Daily)，通常设为 True，
+                            以便在 PanelBuilder 中先聚合为月均值，再做变换。
+        """
         if internal_name not in self.series_config:
             raise ValueError(f"Series '{internal_name}' not found in config.")
         
         cfg = self.series_config[internal_name]
         fred_code = cfg['code']
         
-        # --- A. 获取原始数据 ---
+        # --- A. 获取原始数据 (Raw Data) ---
         cache_file = self.cache_dir / f"{internal_name}.csv"
         
         if cache_file.exists():
@@ -79,6 +81,7 @@ class FredDataProvider(DataProvider):
                 series = self.fred.get_series(fred_code)
                 series.name = internal_name
                 series.index.name = "date"
+                # 写入缓存
                 series.to_csv(cache_file)
                 print(f"[Cached] Saved to {cache_file}")
             except Exception as e:
@@ -88,11 +91,14 @@ class FredDataProvider(DataProvider):
         series.index = pd.to_datetime(series.index)
         series = series.sort_index()
 
-        transform_name = cfg.get('transform', 'none')
-        if transform_name in TRANSFORM_MAP:
-            series = TRANSFORM_MAP[transform_name](series)
-        elif transform_name != 'none':
-            raise ValueError(f"Unknown transform: {transform_name}")
+        # [关键逻辑] 仅当 skip_transform 为 False 时才执行变换
+        # 如果 PanelBuilder 传入 True，这里会返回原始的 Level 数据（如汽油绝对价格）
+        if not skip_transform:
+            transform_name = cfg.get('transform', 'none')
+            if transform_name in TRANSFORM_MAP:
+                series = TRANSFORM_MAP[transform_name](series)
+            elif transform_name != 'none':
+                raise ValueError(f"Unknown transform: {transform_name}")
 
         # --- C. 截断 ---
         if end_date is not None:

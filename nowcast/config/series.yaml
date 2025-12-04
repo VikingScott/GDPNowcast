@@ -1,17 +1,9 @@
-# config/series.yaml（新增指标在文件末尾）
+# config/series.yaml
 
-# --- 既有指标 ---
+# ==========================================
+# --- GDP Targets & Hard Data ---
+# ==========================================
 
-# Real GDP（GDPC1）
-# • 指标是啥：美国实际GDP，总量指标，链式2017年不变价、年化季调值，衡量整个经济产出规模。 [oai_citation:0‡FRED](https://fred.stlouisfed.org/series/GDPC1?utm_source=chatgpt.com)
-# • 何时发布：按季度由 BEA（美国经济分析局）发布，通常在季度结束约1个月后给出“advance/second/third”三次估计，时间多在工作日早上 8:30 ET。 [oai_citation:1‡经济分析局](https://www.bea.gov/news/schedule/full?utm_source=chatgpt.com)
-# • 原始来源：BEA《Gross Domestic Product》新闻稿与 NIPA 表，FRED 只是转存。 [oai_citation:2‡FRED](https://fred.stlouisfed.org/series/GDPC1?utm_source=chatgpt.com)
-# • transform 理由：pct_qoq_annualized
-#   - 原始是“季调年化水平”（SAAR），对数差或增长率更利于做时间序列/回归；
-#   - 使用环比年化能直接对接主流宏观叙事（“本季度GDP增长x%年化”）。
-# • 注意事项：
-#   - 有明显的“advance→second→third→年度基准修订”多轮修订，做真实时(nowcast)时尽量用 vintage 数据；
-#   - SAAR 已含年化和季调，不要再在代码里重复“年化/再季调”。
 gdp_real:
   vendor: fred
   code: GDPC1
@@ -19,16 +11,6 @@ gdp_real:
   transform: pct_qoq_annualized
   name: "Real GDP"
 
-# Industrial Production（INDPRO）
-# • 指标是啥：工业生产总指数，覆盖制造业、采矿、电力与燃气的实际产出量（指数2017=100），是典型“硬数据”景气指标。 [oai_citation:3‡FRED](https://fred.stlouisfed.org/series/INDPRO?utm_source=chatgpt.com)
-# • 何时发布：由美联储理事会发布 G.17 报告，通常在参考月结束后的中旬工作日上午发布，确切日期随月度日历略变。 [oai_citation:4‡美联储](https://www.federalreserve.gov/releases/g17/current/?utm_source=chatgpt.com)
-# • 原始来源：Board of Governors of the Federal Reserve System, G.17《Industrial Production and Capacity Utilization》。 [oai_citation:5‡FRED](https://fred.stlouisfed.org/graph/?g=QjZj&utm_source=chatgpt.com)
-# • transform 理由：pct_mom
-#   - 工业生产是指数型水平数据，绝对值不直观，环比增速更便于解释；
-#   - 取增速能缓解单位根问题，利于构建近似平稳的特征。
-# • 注意事项：
-#   - 年度有一次大修订（benchmark revision），历史数据会整段重画；
-#   - 指数为SA季调数据，模型里不要重复季调。
 industrial_production:
   vendor: fred
   code: INDPRO
@@ -36,16 +18,6 @@ industrial_production:
   transform: pct_mom
   name: "Industrial Production"
 
-# Nonfarm Payrolls（PAYEMS）
-# • 指标是啥：美国“非农就业总人数”，覆盖约80%就业人口，是最核心的劳动力市场硬指标之一。 [oai_citation:6‡FRED](https://fred.stlouisfed.org/series/PAYEMS?utm_source=chatgpt.com)
-# • 何时发布：由 BLS 在《Employment Situation》报告中发布，一般是“下个月的第一个周五”早上 8:30 ET（假日会调整）。 [oai_citation:7‡DOL](https://www.dol.gov/newsroom/releases/opa/opa20200701?utm_source=chatgpt.com)
-# • 原始来源：Bureau of Labor Statistics, Current Employment Statistics (CES)。FRED 序列 PAYEMS 为季调后的千人单位月度数据。 [oai_citation:8‡FRED](https://fred.stlouisfed.org/series/PAYEMS?utm_source=chatgpt.com)
-# • transform 理由：pct_mom
-#   - 关注的是就业“增速/变化”而非水平；
-#   - 使用百分比环比可以与其他月度指标保持量纲一致，便于比较。
-# • 注意事项：
-#   - 就业数据也有年度 benchmark 修订，尤其是 3–5 年前的数据会被重估；
-#   - 发布当日市场更多看“当月变动人数”和与预期的差异，这里做特征时用增速即可。
 payrolls:
   vendor: fred
   code: PAYEMS
@@ -53,16 +25,6 @@ payrolls:
   transform: pct_mom
   name: "Nonfarm Payrolls"
 
-# Real Retail Sales（RRSFS）
-# • 指标是啥：经通胀调整的零售+餐饮销售额（月度、季调），反映实物消费动量，是接近“真实消费支出”的硬数据。 [oai_citation:9‡FRED](https://fred.stlouisfed.org/series/RRSFS?utm_source=chatgpt.com)
-# • 何时发布：由美国人口普查局在《Advance Monthly Sales for Retail and Food Services》中发布名义零售销售，FRED 再结合物价指数生成“real”系列；通常在参考月结束后的中旬工作日上午发布。 [oai_citation:10‡FRED](https://fred.stlouisfed.org/series/RSAFS?utm_source=chatgpt.com)
-# • 原始来源：U.S. Census Bureau（名义），配合价格指数（BLS/BEA）得到实际值，RRSFS 为FRED整理后的实质零售销售。 [oai_citation:11‡FRED](https://fred.stlouisfed.org/series/RSAFS?utm_source=chatgpt.com)
-# • transform 理由：pct_mom
-#   - 零售销售天然是金额水平，直接用水平会混杂规模与趋势；
-#   - 用实际值的环比增速，对应“真实消费支出”的短期动量。
-# • 注意事项：
-#   - “Advance”本身会有后续修订，历史值每年还受基准调整影响；
-#   - 注意区分名义（RSAFS）与实际（RRSFS）序列，不要混用。 [oai_citation:12‡FRED](https://fred.stlouisfed.org/series/RSAFS?utm_source=chatgpt.com)
 retail_sales_real:
   vendor: fred
   code: RRSFS
@@ -70,34 +32,6 @@ retail_sales_real:
   transform: pct_mom
   name: "Real Retail Sales"
 
-# 费城联储制造业指数 (Philly Fed Manufacturing Index)
-# • 指标是啥：费城联储制造业商业前景调查（MBOS）中的“当前一般活动”指数。0 为荣枯线（>0 扩张，<0 收缩）。它是 ISM PMI 的最佳平替，也是华尔街最看重的先行指标之一。
-# • 何时发布：通常在每月“第三个星期四” 8:30 ET 发布，比 ISM PMI 早约半个月，是当月最早发布的制造业软数据。
-# • 原始来源：Federal Reserve Bank of Philadelphia，FRED 代码为 GACDFSA066MSFRBPHI（季调后）。
-# • transform 理由：diff
-#   - 该指数本身是扩散指数（范围 -100 到 +100），反映的是“相比上月好转还是恶化”的净比例；
-#   - 使用 diff（点数变化）可以捕捉“改善/恶化的加速度”（例如从 -20 跳升至 -5，虽然仍收缩但动能大增）。
-# • 注意事项：
-#   - 波动性通常比 ISM 略大，但方向高度一致；
-#   - 它是完全免费的官方数据，无版权风险。
-philly_fed_mfg:
-  vendor: fred
-  code: GACDFSA066MSFRBPHI
-  freq: monthly
-  transform: diff
-  name: "Philly Fed Manufacturing Index"
-
-# Housing Starts（HOUST）
-# • 指标是啥：新开工住房单位总数（月度、季调年化），是房地产投资与建筑活动的领先指标。 [oai_citation:16‡FRED](https://fred.stlouisfed.org/series/HOUST?utm_source=chatgpt.com)
-# • 何时发布：由美国人口普查局 & HUD 在《New Residential Construction》中发布，通常在参考月结束后第 12 个工作日的 8:30 ET 左右发布，具体日期随工作日安排变化。 [oai_citation:17‡Census.gov](https://www.census.gov/construction/soc/schedule.html?utm_source=chatgpt.com)
-# • 原始来源：U.S. Census Bureau / HUD Survey of Construction（新住宅建设调查）。 [oai_citation:18‡Census.gov](https://www.census.gov/construction/soc/schedule.html?utm_source=chatgpt.com)
-# • transform 理由：diff
-#   - 水平为SAAR数量，量级大，受基数影响强；
-#   - 使用“单位变化”或可近似视为一阶差分，有助于缓解趋势/单位根问题；
-#   - 这里选择 diff 而不是百分比，是因为低迷期分母小、pct 变化容易爆炸。
-# • 注意事项：
-#   - 建筑数据误差区间较大（官方会给出±区间），单点估计本身不精确；
-#   - 易受天气、罢工等临时因素冲击，对模型可考虑使用平滑或长窗特征。
 housing_starts:
   vendor: fred
   code: HOUST
@@ -105,41 +39,121 @@ housing_starts:
   transform: diff
   name: "Housing Starts"
 
+# --- Soft / Survey Data ---
 
-# Initial Claims（ICSA）
-# • 指标是啥：初次申领失业保险人数（周度、季调），衡量“新增失业”的高频领先指标。 [oai_citation:19‡FRED](https://fred.stlouisfed.org/series/ICSA?utm_source=chatgpt.com)
-# • 何时发布：由美国劳工部（就业与培训署 ETA）在《Unemployment Insurance Weekly Claims》报告中发布，
-#   通常每周四早上 8:30 ET；遇联邦假日会提前到周三。 [oai_citation:20‡失业保险服务网站](https://oui.doleta.gov/unemploy/claims_arch.asp?utm_source=chatgpt.com)
-# • 原始来源：U.S. Employment and Training Administration, Unemployment Insurance Weekly Claims。FRED 的 ICSA 为季调后周度数据。 [oai_citation:21‡FRED](https://fred.stlouisfed.org/series/ICSA?utm_source=chatgpt.com)
-# • transform 理由：log_diff
-#   - 对数差近似“百分比变化”，能在不同失业水平区间保持波动尺度可比；
-#   - 初请本身噪声大，关注方向/动量比水平更重要。
-# • 注意事项：
-#   - 周频要并入月度/季度面板时，需要显式约定聚合方式（如月内平均、月末最后一周、或4周均值）；
-#   - 假日、天气等事件会造成短期尖刺，建模时最好先做简单平滑（如4周移动平均）。 [oai_citation:22‡FRED](https://fred.stlouisfed.org/series/IC4WSA?utm_source=chatgpt.com)
-initial_claims:
+philly_fed_mfg:
   vendor: fred
-  code: ICSA
-  freq: weekly
-  transform: log_diff  # 或 diff；常关注变化率/动量而非绝对水平
-  name: "Initial Claims"
+  code: GACDFSA066MSFRBPHI
+  freq: monthly
+  transform: diff
+  name: "Philly Fed Manufacturing Index"
 
-# University of Michigan Consumer Sentiment（UMCSENT）
-# • 指标是啥：密歇根大学消费者信心指数，1966Q1=100 为基期的月度调查指数，评估居民对当前/未来经济与个人财务的看法。 [oai_citation:23‡FRED](https://fred.stlouisfed.org/series/UMCSENT?utm_source=chatgpt.com)
-# • 何时发布：密歇根大学每月发布两次（预览 & 终值），通常是：
-#   - 当月中旬的第二个周五：preliminary（预估值）；
-#   - 当月末的第四个周五：final（终值），10:00 ET。 [oai_citation:24‡斯卡](https://www.sca.isr.umich.edu/?utm_source=chatgpt.com)
-#   FRED 上的 UMCSENT 通常延后 1 个月提供。 [oai_citation:25‡FRED](https://fred.stlouisfed.org/series/UMCSENT?utm_source=chatgpt.com)
-# • 原始来源：University of Michigan, Surveys of Consumers；FRED 序列 UMCSENT 是官方指数的月度镜像。 [oai_citation:26‡FRED](https://fred.stlouisfed.org/graph/?g=79VG&utm_source=chatgpt.com)
-# • transform 理由：diff
-#   - 指数围绕 ~100 波动，经济学和实务中常解读为“点数变动”（例如 +3pt / -5pt）；
-#   - 直接差分保留这种解释，并避免在接近0的情况下出现离谱的百分比变化。
-# • 注意事项：
-#   - FRED 数据有 1 个月滞后，做“及时 nowcast”时要清楚这一点；
-#   - 纯软数据波动大，个别月份受政治/事件影响严重，模型里可与硬数据一同使用，或通过滚动窗口削弱异常冲击。
 consumer_sentiment:
   vendor: fred
   code: UMCSENT
   freq: monthly
-  transform: diff  # 作为指数，使用点差更直观
+  transform: diff
   name: "U. Mich. Consumer Sentiment"
+
+# --- High Frequency Data ---
+
+initial_claims:
+  vendor: fred
+  code: ICSA
+  freq: weekly
+  transform: log_diff
+  name: "Initial Claims"
+
+# ==========================================
+# --- CPI & Inflation Targets ---
+# ==========================================
+
+# 1. Target: CPI Headline
+cpi_headline:
+  vendor: fred
+  code: CPIAUCSL
+  freq: monthly
+  transform: pct_mom
+  name: "CPI Headline (Seasonally Adjusted)"
+
+# 2. Energy: WTI Crude Oil (High Freq)
+oil_wti:
+  vendor: fred
+  code: DCOILWTICO
+  freq: daily
+  transform: pct_mom
+  name: "WTI Crude Oil Price (Daily Spot)"
+
+# 3. Energy: Gasoline (High Freq)
+gas_price:
+  vendor: fred
+  code: GASREGW
+  freq: weekly
+  transform: pct_mom
+  name: "US Regular Gasoline Prices"
+
+# 4. Expectations: Breakeven Inflation
+inflation_breakeven:
+  vendor: fred
+  code: T10YIE
+  freq: daily
+  transform: diff
+  name: "10-Year Breakeven Inflation Rate"
+
+# 5. Upstream: PPI
+ppi_all:
+  vendor: fred
+  code: PPIACO
+  freq: monthly
+  transform: pct_mom
+  name: "PPI All Commodities"
+
+# 6. Inertia: Sticky Price CPI
+cpi_sticky:
+  vendor: fred
+  code: STICKCPIM157SFRBATL
+  freq: monthly
+  transform: none
+  name: "Sticky Price CPI"
+
+# ==========================================
+# --- CPI Breakdown Targets (通胀拆解) ---
+# ==========================================
+
+# 7. Food: CPI Food
+cpi_food:
+  vendor: fred
+  code: CPIUFDSL
+  freq: monthly
+  transform: pct_mom
+  name: "CPI Food (Seasonally Adjusted)"
+
+# 8. Confirmation: Core CPI
+cpi_core:
+  vendor: fred
+  code: CPILFESL
+  freq: monthly
+  transform: pct_mom
+  name: "Core CPI (Less Food & Energy)"
+
+# 9. Structure: CPI Shelter
+cpi_shelter:
+  vendor: fred
+  code: CUSR0000SAH1
+  freq: monthly
+  transform: pct_mom
+  name: "CPI Shelter"
+
+# ==========================================
+# --- Supplementary Predictor (补充特征) ---
+# ==========================================
+
+# 10. Labor Cost: Average Hourly Earnings
+# • 指标是啥：私人非农企业生产和非管理人员的平均时薪。
+# • 作用：服务业通胀的核心驱动力，预测 Core 和 Sticky CPI 的关键。
+hourly_earnings:
+  vendor: fred
+  code: CES0500000003
+  freq: monthly
+  transform: pct_mom
+  name: "Avg Hourly Earnings (Prod/Nonsup)"
