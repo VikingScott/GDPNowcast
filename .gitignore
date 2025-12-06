@@ -15,7 +15,7 @@ __pycache__/
 !**/.gitkeep
 
 # 也可以明确指定忽略 data/cache 下的所有内容
-nowcast/data/cache/*
+.pytest_cache/*
 # 如果你有 archive 文件夹，也忽略
 nowcast/data/archive/*
 

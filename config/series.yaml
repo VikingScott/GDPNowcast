@@ -1,0 +1,405 @@
+# config/series.yaml
+# GDP Nowcast - Series Metadata
+
+gdp_growth:
+  # ---------------------------
+  # Core identification fields
+  # ---------------------------
+
+  vendor: fred
+  # Data provider tag used by loaders.py.
+  # "fred" means: use the FRED/ALFRED API (or local FRED-style CSV)
+  # and interpret the `code` below as a FRED/ALFRED series ID.
+
+  code: A191RL1Q225SBEA
+  # FRED/ALFRED series ID:
+  # "Real Gross Domestic Product" – Percent change from preceding period,
+  # seasonally adjusted at annual rates (SAAR), quarterly.
+  # This is our TARGET series for the GDP nowcast.
+
+  freq: Q
+  # Frequency of the series.
+  # Allowed values in this project: "Q", "M", "W", "D".
+  # Here "Q" = quarterly data.
+
+  name: "Real GDP growth (% SAAR, q/q)"
+  # Human-readable name, for logging / plots / debug.
+
+  # ---------------------------
+  # Transformation
+  # ---------------------------
+
+  transform: ""
+  # Transformation to apply to the raw series before modeling.
+  # We intentionally leave this empty for now.
+  # Later we may define a convention, e.g.:
+  #   - "none" / ""       : use the percentage values as-is (e.g. 2.5)
+  #   - "pct_to_decimal"  : divide by 100 so 2.5% → 0.025
+  # For the first version, transformation will be handled explicitly
+  # in the feature/model layer, not via this flag.
+
+  # ---------------------------
+  # Release calendar & lag
+  # ---------------------------
+
+  release_rule: "BEA_GDP_ADV"
+  # Internal enum describing how to compute the release_date from ref_period.
+  # "BEA_GDP_ADV" means:
+  #   - This is the BEA advance estimate for quarterly GDP.
+  #   - In calendar.py we will implement:
+  #       release_date ≈ quarter_end_date + release_lag_days
+
+  release_lag_days: 27
+  # Approximate number of days between the end of the quarter and the
+  # advance GDP release by BEA.
+  # Empirically, BEA typically releases advance GDP about 26–28 days
+  # after quarter end (end of the following month).
+  # We use 27 as a practical approximation:
+  #   release_date = quarter_end + 27 days
+  # This is sufficient for a first version; later we can replace this
+  # with an exact BEA release calendar if desired.
+
+  # ---------------------------
+  # Revision / vintage behavior
+  # ---------------------------
+
+  revision_type: "multi"
+  # Indicates this series is subject to multiple revisions:
+  #   - advance, second, third estimates
+  #   - plus occasional benchmark revisions.
+  # In the first implementation we may still TRAIN on a single version
+  # per quarter (e.g. the first release), but this flag documents that
+  # the series is, in principle, multi-vintage.
+
+  vintage_source: "alfred"
+  # Where to fetch historical vintages from.
+  #   - "alfred": use ALFRED (Archival FRED) to obtain the time series
+  #               as it looked at different vintage dates.
+  #   - "final" : (alternative) use only the latest revised FRED series.
+  # loaders.py should interpret "alfred" as:
+  #   - return data with (ref_period, vintage_date, value) so that
+  #     panel.py can reconstruct the series for any as-of date.
+
+  vintage_mode: "first_release"
+  # How to choose which vintage is treated as the "true" target for each quarter.
+  # Suggested allowed values:
+  #   - "first_release": use the first official release for each quarter
+  #                      (closest to what markets see in real time).
+  #   - "latest": use the latest available revised value (final data).
+  #   - "all_releases": keep all vintages; selection deferred to panel logic.
+  #
+  # For now we set "first_release" to align with real-time nowcast practice:
+  #   - For each quarter, we treat its advance estimate as the target
+  #     that the model is trying to nowcast before the release_date.
+
+  # ---------------------------
+  # Missing data policy
+  # ---------------------------
+
+  missing_policy: "skip"
+  # How to handle missing observations for this series when building features.
+  # Suggested allowed values:
+  #   - "skip"          : treat missing as NA; do not impute in this series
+  #                       (feature builder may still add a "missing flag").
+  #   - "carry_forward" : forward-fill the last observed value.
+  #   - "zero"          : fill missing with 0 (only sensible for some transforms).
+  #   - "flag_only"     : ignore the value, but use a binary "is_missing" feature.
+  #
+  # For the GDP target, "skip" means:
+  #   - If for some quarter we do not have a valid target (e.g. vintage gap),
+  #     that quarter is excluded from model training / evaluation.
+
+
+industrial_production:
+  # ---------------------------
+  # Core identification fields
+  # ---------------------------
+
+  vendor: fred
+  # Data provider tag interpreted by loaders.py.
+  # "fred" means the loader should fetch the series from FRED/ALFRED
+  # depending on the vintage configuration.
+
+  code: INDPRO
+  # FRED/ALFRED series ID:
+  # Industrial Production Index.
+  # Units: Index 2017 = 100, Seasonally Adjusted (SA).
+  # Frequency: Monthly.
+  # This is one of the key hard-data indicators in most GDP nowcast systems.
+
+  freq: M
+  # Frequency of the series: "M" = monthly.
+
+  name: "Industrial Production Index (2017=100, SA)"
+  # Short human-readable name for logs / plots.
+
+  # ---------------------------
+  # Transformation
+  # ---------------------------
+
+  transform: ""
+  # Leave transformation unspecified for now.
+  # Later possible options include:
+  #   - "mom"        : percent change month-over-month
+  #   - "log_diff"   : log difference (approximate growth)
+  #   - "none"/""    : use raw index levels
+  # We intentionally delay this decision until all transformations
+  # are reviewed systematically.
+
+  # ---------------------------
+  # Release calendar & lag
+  # ---------------------------
+
+  release_rule: "FED_IP"
+  # Internal enum describing how to compute release_date for this series.
+  # Industrial Production is typically released by the Federal Reserve
+  # around the middle of the following month.
+  # calendar.py will interpret this rule accordingly.
+
+  release_lag_days: 15
+  # Approximate lag from month-end to release.
+  # Reality: IP usually comes out around the 15th of the next month.
+  # This approximation is sufficient for constructing a real-time macro panel.
+  # Later, if desired, this can be replaced by a precise release calendar.
+
+  # ---------------------------
+  # Revision / vintage behavior
+  # ---------------------------
+
+  revision_type: "multi"
+  # Industrial Production is subject to revisions:
+  #   - Monthly revisions
+  #   - Annual benchmark revisions
+  # Therefore "multi" is appropriate.
+  # For now, this acts primarily as meta-information, but becomes critical
+  # once ALFRED vintage support is activated.
+
+  vintage_source: "alfred"
+  # Use ALFRED historical vintages rather than only the latest revised values.
+  # loaders.py should return records of the form:
+  #   (ref_period, vintage_date, value)
+  # so that panel.py can reconstruct the series as of any given date.
+
+  vintage_mode: "latest"
+  # How to select the value used for modeling:
+  #   - "first_release": earliest available vintage each month
+  #   - "latest": always use the latest released value as of as-of date
+  #   - "all_releases": keep all vintages for deeper revision analysis
+  #
+  # For IP, we set "latest":
+  #   because markets typically use the latest available estimate,
+  #   and because IP revisions are relatively small compared to GDP.
+
+  # ---------------------------
+  # Missing data policy
+  # ---------------------------
+
+  missing_policy: "carry_forward"
+  # If the industrial production value is missing (e.g., release delay,
+  # government shutdown, data feed interruption), carry forward the
+  # previous available value.
+  #
+  # Recommended best practice:
+  #   FeatureBuilder should additionally generate a binary
+  #   "ip_missing_flag" feature to distinguish:
+  #     - true economic "no change"
+  #     - vs "no new data available"
+  #
+  # This avoids misleading the model during episodes where no update occurs.
+
+payrolls:
+  # ---------------------------
+  # Core identification fields
+  # ---------------------------
+
+  vendor: fred
+  # FRED/ALFRED data provider.
+
+  code: PAYEMS
+  # Nonfarm Payrolls (Total Nonfarm, Seasonally Adjusted)
+  # Units: Thousands of persons, Seasonally Adjusted (SA)
+  # Frequency: Monthly
+
+  freq: M
+  name: "Nonfarm Payrolls (SA)"
+
+  # ---------------------------
+  # Transformation
+  # ---------------------------
+
+  transform: ""
+  # Leave empty for now; candidate transforms may include:
+  #   - "mom" for monthly percent change
+  #   - "level" if used directly
+  # Decision will be made globally for all series.
+
+  # ---------------------------
+  # Release calendar & lag
+  # ---------------------------
+
+  release_rule: "BLS_EMPLOYMENT"
+  # Employment Situation Report (Jobs Report)
+  # Typically released on the first Friday of the following month.
+
+  release_lag_days: 7
+  # Quarter-end → roughly 7 days until publication.
+  # Very close to empirical behavior; good engineering approximation.
+
+  # ---------------------------
+  # Revision / vintage behavior
+  # ---------------------------
+
+  revision_type: "multi"
+  # Payrolls undergo monthly revisions and annual benchmark revisions.
+
+  vintage_source: "alfred"
+  # Use ALFRED historical vintages for true real-time reconstruction.
+
+  vintage_mode: "latest"
+  # For modeling, use the latest available value as-of date.
+
+  # ---------------------------
+  # Missing data policy
+  # ---------------------------
+
+  missing_policy: "skip"
+  # If missing, do not impute; simply drop the value for that date.
+  # This is appropriate because payrolls should not be artificially filled.
+
+retail_sales_real:
+  vendor: fred
+  code: RRSFS
+  # Real Retail and Food Services Sales
+  # Units: Millions of chained 2017 dollars, SA
+  # Frequency: Monthly
+
+  freq: M
+  name: "Real Retail Sales (SA)"
+
+  transform: ""
+  # Growth transform to be decided later (likely MoM or log_diff)
+
+  release_rule: "CENSUS_RETAIL"
+  # Census Bureau retail sales release.
+
+  release_lag_days: 14
+  # Typically released around the middle of the following month.
+
+  revision_type: "multi"
+  # Retail sales regularly undergo revisions.
+
+  vintage_source: "alfred"
+  vintage_mode: "latest"
+
+  missing_policy: "skip"
+  # Do not forward-fill; absence of retail sales data should be explicit.
+
+housing_starts:
+  vendor: fred
+  code: HOUST
+  # Housing Starts
+  # Units: Thousands, SAAR (Seasonally Adjusted Annual Rate)
+  # Frequency: Monthly
+
+  freq: M
+  name: "Housing Starts (SAAR)"
+
+  transform: ""
+  # Growth transform will be decided later.
+
+  release_rule: "CENSUS_HOUSING"
+  # Census Bureau residential construction report.
+
+  release_lag_days: 15
+  # Usually released mid-month.
+
+  revision_type: "multi"
+  # Housing Starts data frequently revised.
+
+  vintage_source: "alfred"
+  vintage_mode: "latest"
+
+  missing_policy: "skip"
+
+philly_fed_mfg:
+  vendor: fred
+  code: GACDFSA066MSFRBPHI
+  # Philadelphia Fed Manufacturing Business Outlook Survey
+  # Units: Diffusion index, Seasonally Adjusted
+  # Frequency: Monthly
+
+  freq: M
+  name: "Philly Fed Manufacturing Index"
+
+  transform: ""
+  # Usually used in level or simple diff form.
+
+  release_rule: "FED_PHILLY_MFG"
+  # Released within the same month (survey data).
+
+  release_lag_days: 0
+  # Survey data effectively belongs to its release month.
+
+  revision_type: "multi"
+  # While surveys rarely revise significantly, allow multi for flexibility.
+
+  vintage_source: "alfred"
+  vintage_mode: "latest"
+
+  missing_policy: "skip"
+
+
+consumer_sentiment:
+  vendor: fred
+  code: UMCSENT
+  # University of Michigan Consumer Sentiment Index
+  # Units: Index, SA
+  # Frequency: Monthly
+
+  freq: M
+  name: "Consumer Sentiment (UMich)"
+
+  transform: ""
+
+  release_rule: "UMICH_SENTIMENT"
+  # Survey data; released within the same month.
+
+  release_lag_days: 0
+  # Treat as contemporaneous.
+
+  revision_type: "multi"
+  # UMich releases preliminary and final estimates.
+
+  vintage_source: "alfred"
+  vintage_mode: "latest"
+
+  missing_policy: "skip"
+
+
+initial_claims:
+  vendor: fred
+  code: ICSA
+  # Initial Unemployment Claims
+  # Units: Number of persons, Weekly, SA
+
+  freq: W
+  name: "Initial Claims (Weekly, SA)"
+
+  transform: ""
+  # Transformation (level or change) will be decided later.
+
+  release_rule: "WEEKLY_CLAIMS"
+  # Released every Thursday for the prior week.
+
+  release_lag_days: 1
+  # Previous week → LAG ~1 day into the new week.
+
+  revision_type: "single"
+  # Claims data may have minor tweaks, but generally treated as single-release.
+
+  vintage_source: "alfred"
+  vintage_mode: "latest"
+
+  missing_policy: "carry_forward"
+  # Weekly claims occasionally missing due to holidays / reporting issues.
+  # carry_forward + missing_flag (in features) is recommended.
