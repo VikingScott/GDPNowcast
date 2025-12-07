@@ -137,7 +137,7 @@ industrial_production:
   # Transformation
   # ---------------------------
 
-  transform: ""
+  transform: "mom"
   # Leave transformation unspecified for now.
   # Later possible options include:
   #   - "mom"        : percent change month-over-month
@@ -227,7 +227,7 @@ payrolls:
   # Transformation
   # ---------------------------
 
-  transform: ""
+  transform: "mom"
   # Leave empty for now; candidate transforms may include:
   #   - "mom" for monthly percent change
   #   - "level" if used directly
@@ -276,7 +276,7 @@ retail_sales_real:
   freq: M
   name: "Real Retail Sales (SA)"
 
-  transform: ""
+  transform: "mom"
   # Growth transform to be decided later (likely MoM or log_diff)
 
   release_rule: "CENSUS_RETAIL"
@@ -304,7 +304,7 @@ housing_starts:
   freq: M
   name: "Housing Starts (SAAR)"
 
-  transform: ""
+  transform: "mom"
   # Growth transform will be decided later.
 
   release_rule: "CENSUS_HOUSING"
@@ -331,7 +331,7 @@ philly_fed_mfg:
   freq: M
   name: "Philly Fed Manufacturing Index"
 
-  transform: ""
+  transform: "level"
   # Usually used in level or simple diff form.
 
   release_rule: "FED_PHILLY_MFG"
@@ -359,7 +359,7 @@ consumer_sentiment:
   freq: M
   name: "Consumer Sentiment (UMich)"
 
-  transform: ""
+  transform: "level"
 
   release_rule: "UMICH_SENTIMENT"
   # Survey data; released within the same month.
@@ -385,7 +385,7 @@ initial_claims:
   freq: W
   name: "Initial Claims (Weekly, SA)"
 
-  transform: ""
+  transform: "log_diff"
   # Transformation (level or change) will be decided later.
 
   release_rule: "WEEKLY_CLAIMS"
