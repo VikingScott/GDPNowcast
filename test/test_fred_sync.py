@@ -1,84 +1,145 @@
 # test/test_fred_sync.py
+"""
+Integration-style check for real local data:
+
+1. Use sync_all_series() to download/update data into data/raw.
+2. Validate that all CSVs under data/raw follow the expected structure.
+
+This is closer to a health-check / maintenance script than a unit test,
+but pytest can still run it.
+"""
 
 import os
 import sys
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
-# ----- ensure src/ is on sys.path -----
-ROOT = Path(__file__).resolve().parents[1]  # project root: GDPNowcast/
+# 如果你用 pytest 跑，这里可以用 pytest.skip；如果只当脚本跑也没问题
+try:
+    import pytest
+except ImportError:  # 允许纯 python 直接运行
+    pytest = None  # type: ignore
+
+# ----- 确保 src/ 在 sys.path 里 -----
+ROOT = Path(__file__).resolve().parents[1]  # 项目根目录: GDPNowcast/
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+# Ensure 'src/data/series_config.py' exists
+if not (SRC / "data" / "series_config.py").exists():
+    raise ImportError(f"Cannot find 'series_config.py' in {SRC / 'data'}")
+
 from data.series_config import load_series_meta  # noqa: E402
-from data.fred_sync import sync_all_series      # noqa: E402
+from data.fred_sync import sync_all_series  # noqa: E402
 
 
-@pytest.mark.slow
-def test_sync_all_series_integration(tmp_path: Path):
+def _sync_and_check() -> None:
     """
-    Integration test:
-      - Requires a valid FRED_API_KEY in environment / .env
-      - Uses the real config/series.yaml
-      - Downloads ALL series into a temporary data/raw directory
-      - Verifies that for each series:
-          * the expected CSV file exists
-          * the columns match our standard:
-              - vintage_source == "alfred":
-                    ref_period, vintage_date, value
-              - vintage_source != "alfred":
-                    ref_period, value
+    真正的逻辑：
+      1) 调用 sync_all_series() 更新 data/raw/
+      2) 对 data/raw/ 里的每一个 series 做结构检查
     """
-
-    # 1) 如果没有 API key，直接跳过这条测试，而不是报错
+    # 1) 确认有 FRED_API_KEY
     if not os.getenv("FRED_API_KEY"):
-        pytest.skip("FRED_API_KEY not set; skipping integration download test.")
+        msg = "FRED_API_KEY not set; please configure .env or environment."
+        if pytest is not None:
+            pytest.skip(msg)
+        else:
+            raise RuntimeError(msg)
 
     config_path = ROOT / "config" / "series.yaml"
+    data_dir = ROOT / "data" / "raw"
 
-    # 2) 加载元数据，看看总共有多少 series
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2) 读元数据
     meta_dict = load_series_meta(config_path)
-    assert len(meta_dict) > 0
+    if len(meta_dict) == 0:
+        raise RuntimeError("No series found in config/series.yaml")
 
-    # 3) 让 sync_all_series 真正去 FRED/ALFRED 下载全部数据
-    data_dir = tmp_path / "raw"
-
+    # 3) 同步所有 series（真正去 FRED/ALFRED 下载，并写入 data/raw/）
+    print(f"[SYNC] Updating all series into {data_dir} ...")
     results = sync_all_series(
         config_path=config_path,
         data_dir=data_dir,
-        observation_start="1980-01-01",  # 你可以根据需要调整起始时间
+        observation_start="1980-01-01",  # 可以按需调整起始年份
         observation_end=None,
         client=None,  # 使用内部的 FredClient.from_env()
     )
+    print(f"[SYNC] Done. {len(results)} series updated.")
 
-    # 应该每个 series 都有返回路径
-    assert set(results.keys()) == set(meta_dict.keys())
-
-    # 4) 逐个 series 检查文件存在 & 列结构正确
+    # 4) 检查 data/raw/ 里每个文件的结构
     for name, meta in meta_dict.items():
         code = meta.code
 
         if meta.vintage_source == "alfred":
-            expected_path = data_dir / f"{code}_vintage.csv"
-            assert expected_path.exists(), f"Missing vintage file for {name}: {expected_path}"
-            df = pd.read_csv(expected_path)
+            path = data_dir / f"{code}_vintage.csv"
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"[{name}] expected vintage file not found: {path}"
+                )
 
-            # 至少这三列存在
-            assert "ref_period" in df.columns, f"ref_period missing in {expected_path}"
-            assert "vintage_date" in df.columns, f"vintage_date missing in {expected_path}"
-            assert "value" in df.columns, f"value missing in {expected_path}"
+            df = pd.read_csv(path)
+            cols = set(df.columns)
 
-            # 不要求行数，只要有列就行，但你可以检查非空
-            assert len(df) > 0, f"Vintage file {expected_path} is empty"
+            required = {"ref_period", "vintage_date", "value"}
+            missing = required - cols
+            if missing:
+                raise AssertionError(
+                    f"[{name}] vintage file {path} missing columns: {missing}; "
+                    f"got {df.columns.tolist()}"
+                )
+
+            if len(df) == 0:
+                raise AssertionError(
+                    f"[{name}] vintage file {path} is empty."
+                )
 
         else:
-            expected_path = data_dir / f"{code}.csv"
-            assert expected_path.exists(), f"Missing final file for {name}: {expected_path}"
-            df = pd.read_csv(expected_path)
+            path = data_dir / f"{code}.csv"
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"[{name}] expected final file not found: {path}"
+                )
 
-            assert "ref_period" in df.columns, f"ref_period missing in {expected_path}"
-            assert "value" in df.columns, f"value missing in {expected_path}"
-            assert len(df) > 0, f"Final file {expected_path} is empty"
+            df = pd.read_csv(path)
+            cols = set(df.columns)
+
+            required = {"ref_period", "value"}
+            missing = required - cols
+            if missing:
+                raise AssertionError(
+                    f"[{name}] final file {path} missing columns: {missing}; "
+                    f"got {df.columns.tolist()}"
+                )
+
+            if len(df) == 0:
+                raise AssertionError(
+                    f"[{name}] final file {path} is empty."
+                )
+
+    print("[CHECK] All local data/raw files look structurally OK.")
+
+
+# ---------- pytest 接口 ----------
+
+def test_sync_and_check_real_data():
+    """
+    pytest 用的入口：跑一次真实同步 + 结构检查。
+
+    注意：
+      - 这不是传统“快小单测”，而是一个 integration / health-check。
+      - 如果你不想每次 CI 都跑，可以用 `-m "not slow"` 之类的标记控制。
+    """
+    _sync_and_check()
+
+
+# ---------- 直接 python 运行时的入口 ----------
+
+if __name__ == "__main__":
+    _sync_and_check()

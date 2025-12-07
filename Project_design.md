@@ -1,6 +1,3 @@
-下面是 **精简后的正式技术文档（Technical Specification）**，无 emoji、无多余排版、无未来扩展内容、无例子，格式适合作为 LLM 的系统文档输入。
-
----
 
 # GDP Nowcast 项目技术文档（精简版）
 
